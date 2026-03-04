@@ -19,42 +19,42 @@ Use it to coordinate experiments, record results, and capture pitfalls so future
 
 ### TODO
 
-- [ ] YYYY-MM-DD HH:MM UTC: Train a baseline action-chunking BC policy with default settings  
-      Command: `scripts/cabinet_experiment.sh train`
-- [ ] YYYY-MM-DD HH:MM UTC: Evaluate the best baseline checkpoint on multiple layouts/styles (pretrain split)  
+- [ ] 2026-03-04: Evaluate the best baseline checkpoint on multiple layouts/styles (pretrain split)  
       Command: `scripts/cabinet_experiment.sh eval --checkpoint /tmp/cabinet_policy_checkpoints/best_policy.pt --num_rollouts 20`
-- [ ] YYYY-MM-DD HH:MM UTC: Visualize a few successful and failed rollouts to understand failure modes  
+- [ ] 2026-03-04: Visualize a few successful and failed rollouts to understand failure modes  
       Command: `scripts/cabinet_experiment.sh viz --checkpoint /tmp/cabinet_policy_checkpoints/best_policy.pt --num_episodes 3`
-- [ ] YYYY-MM-DD HH:MM UTC: Train with shorter action horizon K=4 and compare success rate  
+- [ ] 2026-03-04: Action-horizon sweep K=4 — compare success rate vs baseline  
       Command: `scripts/cabinet_experiment.sh train --action_horizon 4`
-- [ ] YYYY-MM-DD HH:MM UTC: Train with medium action horizon K=8 and compare success rate  
+- [ ] 2026-03-04: Action-horizon sweep K=8 — compare success rate vs baseline  
       Command: `scripts/cabinet_experiment.sh train --action_horizon 8`
-- [ ] YYYY-MM-DD HH:MM UTC: Train with longer action horizon K=16 and compare smoothness/success  
+- [ ] 2026-03-04: Action-horizon sweep K=16 — compare smoothness and success vs baseline  
       Command: `scripts/cabinet_experiment.sh train --action_horizon 16`
-- [ ] YYYY-MM-DD HH:MM UTC: High-epochs baseline run to test whether more training improves success  
+- [ ] 2026-03-04: High-epochs baseline (400) to test whether longer training improves success  
       Command: `scripts/cabinet_experiment.sh train --epochs 400`
-- [ ] YYYY-MM-DD HH:MM UTC: Print official Diffusion Policy / pi-0 / GR00T instructions from the script  
+- [ ] 2026-03-04: Print official Diffusion Policy / pi-0 / GR00T setup instructions  
       Command: `scripts/cabinet_experiment.sh train --use_diffusion_policy`
-- [ ] YYYY-MM-DD HH:MM UTC: Launch a teleop/DAgger data-collection session to gather correction demos (requires human keyboard control)  
+- [ ] 2026-03-04: (Manual) Launch a teleop/DAgger data-collection session — requires human keyboard control  
       Command: `cd cabinet_door_project && python 03_teleop_collect_demos.py`
-- [ ] YYYY-MM-DD HH:MM UTC: After collecting new DAgger demos, retrain the baseline policy on the augmented dataset and compare eval vs the original baseline  
+- [ ] 2026-03-04: After collecting DAgger demos, retrain on augmented dataset and compare eval vs original baseline  
       Command: `scripts/cabinet_experiment.sh train --epochs 200`
 
 > When you add new experiments, follow the same pattern: one line summary + the **exact command** you plan to run.
 
 ### In Progress
 
-- [ ] (move an item from TODO here when you start working on it; keep the command line visible)
+- [ ] 2026-03-04: Train a baseline action-chunking BC policy with default settings (200 epochs, K=10, obs_horizon=5)  
+      Command: `scripts/cabinet_experiment.sh train`  
+      Started: 2026-03-04
 
 ### Done
 
-- [ ] (once a task finishes, copy it here, mark `[x]`, fill in date + brief metrics summary)
+(none yet)
 
-Example (keep this as a formatting template, then replace with real runs):
-
-- [x] 2026-03-04: Baseline training run completed.  
-      Command: `scripts/cabinet_experiment.sh train --epochs 200`  
-      Result: `best_val_loss=...`, checkpoint at `/tmp/cabinet_policy_checkpoints/best_policy.pt`.
+> Template — copy this when recording a completed run:
+>
+> - [x] YYYY-MM-DD: Short description.  
+>       Command: `scripts/cabinet_experiment.sh ...`  
+>       Result: key metrics, checkpoint path, notes.
 
 ## Critical Pitfalls / Learnings
 
@@ -63,6 +63,7 @@ Only keep items that affect experiment correctness, reproducibility, or major ru
 
 Examples (replace with real cabinet-door issues as you discover them):
 
+- 2026-03-04 - high impact - pip failed with `Invalid version: '2.2.5 2'` when installing or listing packages - mitigation: venv metadata was corrupted; recreate with `rm -rf .venv` then `./install.sh` (see README Troubleshooting).
 - YYYY-MM-DD - high impact - sim would not render because MuJoCo/GL env vars were misconfigured on Linux - mitigation: ensure `MUJOCO_GL=osmesa` and `PYOPENGL_PLATFORM=osmesa` for headless runs (see environment handling in `07_evaluate_policy.py` / `08_visualize_policy_rollout.py`).
 - YYYY-MM-DD - medium impact - evaluation success rate was unstable due to too few episodes (`num_rollouts` too small) - mitigation: standardize on at least 20 episodes for comparing checkpoints.
 

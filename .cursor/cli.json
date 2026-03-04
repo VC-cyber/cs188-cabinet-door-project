@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(scripts/cabinet_experiment.sh)",
+      "Shell(bash)",
+      "Shell(python)"
+    ],
+    "deny": []
+  }
+}

@@ -333,6 +333,7 @@ I'll continually update this section as students find bugs in the system. Please
 
 | Problem | Solution |
 |---------|----------|
+| `Invalid version: '2.2.5 2'` (pip) | Venv metadata is corrupted. Recreate it: `rm -rf .venv` then `./install.sh` |
 | `MuJoCo version must be 3.3.1` | `pip install mujoco==3.3.1` |
 | `numpy version must be 2.2.5` | `pip install numpy==2.2.5` |
 | Rendering crashes on Mac | Use `mjpython` instead of `python` |

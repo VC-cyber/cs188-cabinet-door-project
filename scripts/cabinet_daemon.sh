@@ -69,6 +69,7 @@ find_next_command() {
     /^[[:space:]]*Command:[[:space:]]*/ && in_task {
       cmd=$0
       sub(/^[[:space:]]*Command:[[:space:]]*/, "", cmd)
+      gsub(/`/, "", cmd)                           # strip backticks so bash does not run output as command
       print cmd
       exit
     }

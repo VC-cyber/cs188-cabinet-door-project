@@ -6,12 +6,10 @@ Before running any automation (CLI Agent, daemons, etc.) in this repo:
 
 - **Install project dependencies** (once per machine):
   - From the repo root: `./install.sh`
-- **Trust this directory for the Cursor CLI** (required so `agent` can run non-interactively):
-  - From the repo root:
-    - `agent --trust .`
-  - Alternatively, run `agent` interactively once in this directory and accept the prompt.
-- **Do NOT pass `--yolo` / `--force` flags from automated scripts.**
-  - Trust decisions should be made by a human; automation assumes the repo has already been trusted.
+- **Trust this directory for the Cursor CLI** (so `agent` can run non-interactively):
+  - From the repo root: `agent --trust .` (or run `agent` interactively once and accept the prompt).
+  - `scripts/ai_cursor_daemon.py` passes `--trust` when it invokes `agent`, so the daemon can run without an interactive trust prompt.
+- **Shell permissions for the agent**: So the agent can run experiment commands (e.g. `scripts/cabinet_experiment.sh train`), this repo has a project CLI config at `.cursor/cli.json` that allows those shell commands. If the agent still cannot run commands, add more `Shell(...)` entries to `permissions.allow` in that file, or use the global config at `~/.cursor/cli-config.json`. See [Cursor CLI permissions](https://cursor.com/docs/cli/reference/permissions).
 
 This file defines how agents (and any daemon) should interact with this **cabinet-door OpenCabinet project**.
 
@@ -104,39 +102,14 @@ Automated agents should:
 - Project plan and experiment log:
   - `PLANS.md`
 
-### 6) AI-driven daemon with Cursor CLI
+### 6) AI-driven daemon (Cursor CLI)
 
-This repo supports an **AI-driven planning loop** on top of the shell daemon:
+The **AI daemon** does both planning and execution:
 
-- **Low-level executor (shell daemon)**
-  - `scripts/cabinet_daemon.sh`
-  - Behavior:
-    - Reads `PLANS.md` and finds the first unchecked TODO with a
-      `Command: scripts/cabinet_experiment.sh ...` line.
-    - Uses `.cabinet_daemon.lock` to avoid overlapping runs; if a PID in the
-      lock file is alive, it sleeps and does not start a new job.
-    - Executes at most one experiment per `--once` call:
-      - `scripts/cabinet_daemon.sh --once`
-
-- **AI planner (Cursor CLI)**
-  - `scripts/ai_cursor_daemon.py`
-  - This script assumes:
-    - The Cursor CLI `agent` command is installed and on `PATH`.
-    - It runs from the repo root (or any directory inside the repo).
-  - High-level loop:
-    1. Call `agent` with a tight prompt that:
-       - Reads `AGENTS.md` and `PLANS.md`.
-       - Edits **only** `PLANS.md` to:
-         - Maintain the cabinet-door plan structure.
-         - Add/reorder TODOs based on previous results and README suggestions.
-         - Move items between TODO / In Progress / Done with short notes.
-         - Ensure the first unchecked TODO with a `Command:` line is the
-           next experiment to run.
-       - Does **not** run shell commands itself.
-    2. After Cursor finishes editing, call:
-       - `scripts/cabinet_daemon.sh --once`
-       which actually executes the newly chosen experiment (if any).
-    3. Sleep for a configurable interval and repeat.
+- **`scripts/ai_cursor_daemon.py`**
+  - Requires: Cursor CLI `agent` on `PATH`; run from repo root with venv active.
+  - Each cycle: invoke the Cursor agent **once**. The agent is responsible for reading `AGENTS.md` and `PLANS.md`, updating `PLANS.md`, and **running the next experiment command itself** from the repo root (foreground, wait for completion). This script does **not** parse `PLANS.md` or run commands. Then sleep for a configurable interval and repeat.
+  - Optional: `scripts/cabinet_daemon.sh` still exists if you want to run the next experiment only (no Cursor agent), e.g. `scripts/cabinet_daemon.sh --once`.
 
 - **Running the AI daemon**
   - Single cycle (plan + run once):
