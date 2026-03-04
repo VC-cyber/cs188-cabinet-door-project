@@ -25,18 +25,20 @@ Use it to coordinate experiments, record results, and capture pitfalls so future
       Command: `scripts/cabinet_experiment.sh eval --checkpoint /tmp/cabinet_policy_checkpoints/best_policy.pt --num_rollouts 20`
 - [ ] YYYY-MM-DD HH:MM UTC: Visualize a few successful and failed rollouts to understand failure modes  
       Command: `scripts/cabinet_experiment.sh viz --checkpoint /tmp/cabinet_policy_checkpoints/best_policy.pt --num_episodes 3`
- - [ ] YYYY-MM-DD HH:MM UTC: Train with shorter action horizon K=4 and compare success rate  
-       Command: `scripts/cabinet_experiment.sh train --action_horizon 4`
- - [ ] YYYY-MM-DD HH:MM UTC: Train with medium action horizon K=8 and compare success rate  
-       Command: `scripts/cabinet_experiment.sh train --action_horizon 8`
- - [ ] YYYY-MM-DD HH:MM UTC: Train with longer action horizon K=16 and compare smoothness/success  
-       Command: `scripts/cabinet_experiment.sh train --action_horizon 16`
- - [ ] YYYY-MM-DD HH:MM UTC: High-epochs baseline run to test whether more training improves success  
-       Command: `scripts/cabinet_experiment.sh train --epochs 400`
- - [ ] YYYY-MM-DD HH:MM UTC: Print official Diffusion Policy / pi-0 / GR00T instructions from the script  
-       Command: `scripts/cabinet_experiment.sh train --use_diffusion_policy`
- - [ ] YYYY-MM-DD HH:MM UTC: (Manual) Explore DAgger mode in `03_teleop_collect_demos.py` and design a correction loop for failure cases (no automatic daemon command; run manually from the README instructions)
- - [ ] YYYY-MM-DD HH:MM UTC: (Manual) Set up and run the official `diffusion_policy` OpenCabinet training pipeline as described in README (external repo; record exact commands and key metrics here)
+- [ ] YYYY-MM-DD HH:MM UTC: Train with shorter action horizon K=4 and compare success rate  
+      Command: `scripts/cabinet_experiment.sh train --action_horizon 4`
+- [ ] YYYY-MM-DD HH:MM UTC: Train with medium action horizon K=8 and compare success rate  
+      Command: `scripts/cabinet_experiment.sh train --action_horizon 8`
+- [ ] YYYY-MM-DD HH:MM UTC: Train with longer action horizon K=16 and compare smoothness/success  
+      Command: `scripts/cabinet_experiment.sh train --action_horizon 16`
+- [ ] YYYY-MM-DD HH:MM UTC: High-epochs baseline run to test whether more training improves success  
+      Command: `scripts/cabinet_experiment.sh train --epochs 400`
+- [ ] YYYY-MM-DD HH:MM UTC: Print official Diffusion Policy / pi-0 / GR00T instructions from the script  
+      Command: `scripts/cabinet_experiment.sh train --use_diffusion_policy`
+- [ ] YYYY-MM-DD HH:MM UTC: Launch a teleop/DAgger data-collection session to gather correction demos (requires human keyboard control)  
+      Command: `cd cabinet_door_project && python 03_teleop_collect_demos.py`
+- [ ] YYYY-MM-DD HH:MM UTC: After collecting new DAgger demos, retrain the baseline policy on the augmented dataset and compare eval vs the original baseline  
+      Command: `scripts/cabinet_experiment.sh train --epochs 200`
 
 > When you add new experiments, follow the same pattern: one line summary + the **exact command** you plan to run.
 

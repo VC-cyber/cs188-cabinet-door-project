@@ -1,5 +1,18 @@
 ## Agent Execution Protocol (MANDATORY – Cabinet Door Project)
 
+### 0) One-time setup and permissions
+
+Before running any automation (CLI Agent, daemons, etc.) in this repo:
+
+- **Install project dependencies** (once per machine):
+  - From the repo root: `./install.sh`
+- **Trust this directory for the Cursor CLI** (required so `agent` can run non-interactively):
+  - From the repo root:
+    - `agent --trust .`
+  - Alternatively, run `agent` interactively once in this directory and accept the prompt.
+- **Do NOT pass `--yolo` / `--force` flags from automated scripts.**
+  - Trust decisions should be made by a human; automation assumes the repo has already been trusted.
+
 This file defines how agents (and any daemon) should interact with this **cabinet-door OpenCabinet project**.
 
 The main goals are:
@@ -84,6 +97,8 @@ Automated agents should:
   - `cabinet_door_project/06_train_policy.py`
   - `cabinet_door_project/07_evaluate_policy.py`
   - `cabinet_door_project/08_visualize_policy_rollout.py`
+- Environment / convenience helper:
+  - `scripts/env_cabinet.sh` (must be sourced: `source scripts/env_cabinet.sh`)
 - Experiment wrapper CLI:
   - `scripts/cabinet_experiment.sh`
 - Project plan and experiment log:
@@ -143,4 +158,27 @@ This repo supports an **AI-driven planning loop** on top of the shell daemon:
       - Brief notes on behavior/failures/next tweaks.
   - Git history (e.g., on a branch like `venkat`) provides an additional
     audit trail for how the automation and plans evolved over time.
+
+### 7) Git update helper (venkat branch)
+
+When it is appropriate to commit and push changes (for example after a
+meaningful batch of experiments or code improvements), use the helper:
+
+- `scripts/git_update_venkat.sh "short commit message"`
+
+Behavior:
+- Runs `python3 -m py_compile` on modified `.py` files.
+- Stages tracked changes plus new whitelisted files:
+  - `AGENTS.md`, `PLANS.md`
+  - `scripts/*.sh`, `scripts/*.py`
+  - `cabinet_door_project/*.py`
+  - `cabinet_door_project/configs/diffusion_policy.yaml`
+- Creates a commit with the given message.
+- Pushes the current branch to `origin` (intended for the `venkat` branch).
+
+Automated agents should:
+- Only call this helper when explicitly authorized by the user or higher-level
+  workflow policy.
+- Prefer descriptive commit messages indicating what changed
+  (e.g., `"Log baseline eval results"` or `"Add K=8 action-horizon sweep"`).
 
