@@ -5,17 +5,17 @@ Loads a trained policy checkpoint from 06_train_policy.py and runs it
 live in the OpenCabinet environment so you can watch the robot.
 
 This is your primary debugging tool: watch exactly where and why the policy
-fails — does it reach for the handle? Does it grasp? Does it pull correctly?
+fails -- does it reach for the handle? Does it grasp? Does it pull correctly?
 
 Two rendering modes:
-  On-screen  (default)  — interactive MuJoCo viewer window, real-time
-  Off-screen (--offscreen) — renders to a video file, works without a display
+  On-screen  (default)  -- interactive MuJoCo viewer window, real-time
+  Off-screen (--offscreen) -- renders to a video file, works without a display
 
 Usage:
     # Watch live in a window (WSL/Linux) + save video
     python 08_visualize_policy_rollout.py --checkpoint /tmp/cabinet_policy_checkpoints/best_policy.pt
 
-    # Save to video only (no display needed — works headless / in notebooks)
+    # Save to video only (no display needed -- works headless / in notebooks)
     python 08_visualize_policy_rollout.py --checkpoint ... --offscreen
 
     # Run 3 episodes, slow down playback so you can follow along
@@ -29,21 +29,13 @@ import os
 import sys
 
 # ── Rendering mode detection ────────────────────────────────────────────────
-# We peek at sys.argv *before* argparse so we can configure the GL backend
-# before any library is imported.  Wrong GL backend = gladLoadGL error.
 _OFFSCREEN = "--offscreen" in sys.argv
 
 if _OFFSCREEN:
-    # Off-screen mode: use Mesa's software osmesa renderer.
-    # EGL is the default on headless Linux but fails on WSL2 (no /dev/dri).
     if sys.platform == "linux":
         os.environ.setdefault("MUJOCO_GL", "osmesa")
         os.environ.setdefault("PYOPENGL_PLATFORM", "osmesa")
 else:
-    # On-screen mode: re-exec with correct display vars baked into the OS
-    # environment so Mesa (GLFW) sees them before any C library initializes.
-    # On WSLg the .bashrc often sets a stale VcXsrv-style DISPLAY that
-    # breaks GLFW; os.execve() restarts the process cleanly.
     if sys.platform == "linux" and "__TELEOP_DISPLAY_OK" not in os.environ:
         _env = dict(os.environ)
         _changed = False
@@ -68,66 +60,22 @@ import argparse
 import time
 
 import numpy as np
-import robocasa  # noqa: F401 — registers OpenCabinet environment
+import robocasa  # noqa: F401 -- registers OpenCabinet environment
 import robosuite
 from robosuite.controllers import load_composite_controller_config
 from robosuite.wrappers import VisualizationWrapper
 
-
-# ── Policy loading (identical to 07_evaluate_policy.py) ─────────────────────
-
-def load_policy(checkpoint_path, device):
-    """Load the SimplePolicy trained by 06_train_policy.py."""
-    import torch
-    import torch.nn as nn
-
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    state_dim = ckpt["state_dim"]
-    action_dim = ckpt["action_dim"]
-
-    class SimplePolicy(nn.Module):
-        def __init__(self, state_dim, action_dim, hidden_dim=256):
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Linear(state_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, action_dim),
-                nn.Tanh(),
-            )
-
-        def forward(self, state):
-            return self.net(state)
-
-    model = SimplePolicy(state_dim, action_dim).to(device)
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
-    return model, state_dim, action_dim, ckpt
-
-
-def extract_state(obs, state_dim):
-    """Flatten non-image observations into a state vector of length state_dim."""
-    parts = []
-    for key in sorted(obs.keys()):
-        val = obs[key]
-        if isinstance(val, np.ndarray) and not key.endswith("_image"):
-            parts.append(val.flatten())
-    if not parts:
-        return np.zeros(state_dim, dtype=np.float32)
-    state = np.concatenate(parts).astype(np.float32)
-    if len(state) < state_dim:
-        state = np.pad(state, (0, state_dim - len(state)))
-    elif len(state) > state_dim:
-        state = state[:state_dim]
-    return state
+from policy import (
+    load_policy_from_checkpoint,
+    extract_state,
+    ActionChunkingInference,
+    reorder_action_for_env,
+)
 
 
 # ── On-screen rollout ────────────────────────────────────────────────────────
 
-def run_onscreen(model, state_dim, action_dim, args):
+def run_onscreen(model, ckpt, args):
     """
     Run the policy with an interactive MuJoCo viewer window.
 
@@ -135,8 +83,18 @@ def run_onscreen(model, state_dim, action_dim, args):
     with the mouse while the robot executes the policy.
     """
     import torch
+    from policy import STATE_KEYS
 
     device = next(model.parameters()).device
+    state_dim = ckpt["state_dim"]
+    state_keys = ckpt.get("state_keys", STATE_KEYS)
+    policy_type = ckpt.get("policy_type", "simple")
+
+    inference = (
+        ActionChunkingInference(model, ckpt, device)
+        if policy_type == "action_chunking"
+        else None
+    )
 
     env = robosuite.make(
         env_name="OpenCabinet",
@@ -161,19 +119,27 @@ def run_onscreen(model, state_dim, action_dim, args):
         print(f"  Task:    {lang}")
         print(f"  Layout:  {env.layout_id}   Style: {env.style_id}")
         print(f"  Running for up to {args.max_steps} steps...")
-        print(f"  (Watch the viewer window — use mouse to orbit the camera)\n")
+        print(f"  (Watch the viewer window -- use mouse to orbit the camera)\n")
+
+        if inference:
+            inference.reset()
 
         success = False
         hold_count = 0
 
         for step in range(args.max_steps):
-            state = extract_state(obs, state_dim)
-            with torch.no_grad():
-                action = model(
-                    torch.from_numpy(state).unsqueeze(0).to(device)
-                ).cpu().numpy().squeeze(0)
+            state = extract_state(obs, state_dim, state_keys=state_keys)
 
-            # Pad / trim to environment's expected action dimension
+            if inference:
+                action = inference.predict(state)
+            else:
+                with torch.no_grad():
+                    action = model(
+                        torch.from_numpy(state).unsqueeze(0).to(device)
+                    ).cpu().numpy().squeeze(0)
+
+            action = reorder_action_for_env(action)
+
             env_dim = env.action_dim
             if len(action) < env_dim:
                 action = np.pad(action, (0, env_dim - len(action)))
@@ -182,7 +148,6 @@ def run_onscreen(model, state_dim, action_dim, args):
 
             obs, reward, done, info = env.step(action)
 
-            # Print a brief status every 20 steps
             if step % 20 == 0:
                 checking = env._check_success()
                 status = "cabinet OPEN" if checking else "in progress"
@@ -200,7 +165,6 @@ def run_onscreen(model, state_dim, action_dim, args):
             else:
                 hold_count = 0
 
-            # Pace the rollout so it is easy to watch
             time.sleep(1.0 / args.max_fr)
 
         result = "SUCCESS" if success else "did not open cabinet"
@@ -214,19 +178,19 @@ def run_onscreen(model, state_dim, action_dim, args):
 
 # ── Off-screen rollout with video ────────────────────────────────────────────
 
-def run_offscreen(model, state_dim, action_dim, args):
+def run_offscreen(model, ckpt, args):
     """
-    Run the policy headlessly and save a side-by-side annotated video.
-
-    Each frame shows the robot from the front-view camera; per-step
-    diagnostics (step count, reward, success flag) are printed to the
-    terminal.
+    Run the policy headlessly and save an annotated video.
     """
     import torch
     import imageio
     from robocasa.utils.env_utils import create_env
+    from policy import STATE_KEYS
 
     device = next(model.parameters()).device
+    state_dim = ckpt["state_dim"]
+    state_keys = ckpt.get("state_keys", STATE_KEYS)
+    policy_type = ckpt.get("policy_type", "simple")
 
     video_dir = os.path.dirname(args.video_path)
     if video_dir:
@@ -235,7 +199,7 @@ def run_offscreen(model, state_dim, action_dim, args):
     cam_h, cam_w = 512, 768
 
     successes = 0
-    all_frames = []  # collect frames across episodes
+    all_frames = []
 
     for ep in range(args.num_episodes):
         print(f"\n--- Episode {ep + 1}/{args.num_episodes} ---")
@@ -252,16 +216,28 @@ def run_offscreen(model, state_dim, action_dim, args):
         print(f"  Task:    {lang}")
         print(f"  Layout:  {env.layout_id}   Style: {env.style_id}")
 
+        inference = (
+            ActionChunkingInference(model, ckpt, device)
+            if policy_type == "action_chunking"
+            else None
+        )
+
         success = False
         hold_count = 0
         ep_frames = []
 
         for step in range(args.max_steps):
-            state = extract_state(obs, state_dim)
-            with torch.no_grad():
-                action = model(
-                    torch.from_numpy(state).unsqueeze(0).to(device)
-                ).cpu().numpy().squeeze(0)
+            state = extract_state(obs, state_dim, state_keys=state_keys)
+
+            if inference:
+                action = inference.predict(state)
+            else:
+                with torch.no_grad():
+                    action = model(
+                        torch.from_numpy(state).unsqueeze(0).to(device)
+                    ).cpu().numpy().squeeze(0)
+
+            action = reorder_action_for_env(action)
 
             env_dim = env.action_dim
             if len(action) < env_dim:
@@ -271,18 +247,15 @@ def run_offscreen(model, state_dim, action_dim, args):
 
             obs, reward, done, info = env.step(action)
 
-            # Render from the agent view camera
             frame = env.sim.render(
                 height=cam_h, width=cam_w, camera_name="robot0_agentview_center"
-            )[::-1]  # MuJoCo renders upside-down
+            )[::-1]
             ep_frames.append(frame)
 
             if step % 20 == 0:
                 checking = env._check_success()
                 status = "cabinet OPEN" if checking else "in progress"
-                print(
-                    f"  step {step:4d}  reward={reward:+.3f}  [{status}]"
-                )
+                print(f"  step {step:4d}  reward={reward:+.3f}  [{status}]")
 
             if env._check_success():
                 hold_count += 1
@@ -300,13 +273,11 @@ def run_offscreen(model, state_dim, action_dim, args):
         all_frames.extend(ep_frames)
         env.close()
 
-    # Write video
     print(f"\nWriting {len(all_frames)} frames to {args.video_path} ...")
     with imageio.get_writer(args.video_path, fps=args.fps) as writer:
         for frame in all_frames:
             writer.append_data(frame)
     print(f"Video saved: {args.video_path}")
-
     print(f"\nFinal: {successes}/{args.num_episodes} episodes succeeded.")
 
 
@@ -317,52 +288,32 @@ def main():
         description="Visualize a trained policy rollout in OpenCabinet"
     )
     parser.add_argument(
-        "--checkpoint",
-        type=str,
+        "--checkpoint", type=str,
         default="/tmp/cabinet_policy_checkpoints/best_policy.pt",
         help="Path to policy checkpoint (.pt) saved by 06_train_policy.py",
     )
     parser.add_argument(
-        "--num_episodes",
-        type=int,
-        default=1,
+        "--num_episodes", type=int, default=1,
         help="Number of episodes to run",
     )
     parser.add_argument(
-        "--max_steps",
-        type=int,
-        default=300,
+        "--max_steps", type=int, default=300,
         help="Maximum steps per episode",
     )
     parser.add_argument(
-        "--offscreen",
-        action="store_true",
+        "--offscreen", action="store_true",
         help="Render to video file instead of opening a viewer window",
     )
     parser.add_argument(
-        "--video_path",
-        type=str,
-        default="/tmp/policy_rollout.mp4",
+        "--video_path", type=str, default="/tmp/policy_rollout.mp4",
         help="Output video path (used with --offscreen)",
     )
+    parser.add_argument("--fps", type=int, default=20)
     parser.add_argument(
-        "--fps",
-        type=int,
-        default=20,
-        help="Frames per second for the saved video",
-    )
-    parser.add_argument(
-        "--max_fr",
-        type=int,
-        default=20,
+        "--max_fr", type=int, default=20,
         help="On-screen playback rate cap (frames/second); lower = slower",
     )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for environment layout/style selection",
-    )
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     print("=" * 60)
@@ -370,7 +321,6 @@ def main():
     print("=" * 60)
     print()
 
-    # Load policy
     try:
         import torch
     except ImportError:
@@ -383,11 +333,9 @@ def main():
         sys.exit(1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, state_dim, action_dim, ckpt = load_policy(args.checkpoint, device)
+    model, ckpt = load_policy_from_checkpoint(args.checkpoint, device)
 
-    print(f"Checkpoint: {args.checkpoint}")
-    print(f"  Epoch {ckpt['epoch']}, loss {ckpt['loss']:.6f}")
-    print(f"  State dim: {state_dim},  Action dim: {action_dim}")
+    print(f"\nCheckpoint: {args.checkpoint}")
     print(f"  Device: {device}")
     print()
 
@@ -400,11 +348,11 @@ def main():
     print()
 
     if args.offscreen:
-        run_offscreen(model, state_dim, action_dim, args)
+        run_offscreen(model, ckpt, args)
     else:
         print("Opening viewer window...")
         print("  Tip: orbit the camera with the mouse to see the gripper.\n")
-        run_onscreen(model, state_dim, action_dim, args)
+        run_onscreen(model, ckpt, args)
 
     print("\nDone.")
 

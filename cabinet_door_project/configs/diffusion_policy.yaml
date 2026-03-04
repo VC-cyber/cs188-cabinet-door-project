@@ -1,22 +1,57 @@
-# Training configuration for the simple behavior cloning policy
-# For the full Diffusion Policy, use the official repo config instead.
+# Training configuration for the action-chunking BC policy
+# Usage: python 06_train_policy.py --config configs/diffusion_policy.yaml
 
 # Training parameters
-epochs: 100
+epochs: 200
 batch_size: 64
 learning_rate: 0.0001
+weight_decay: 0.00001
+grad_clip: 1.0
+val_fraction: 0.1
 
 # Checkpoint saving
 checkpoint_dir: /tmp/cabinet_policy_checkpoints
+
+# Action chunking parameters
+obs_horizon: 5            # number of past observations as temporal context
+action_horizon: 10        # number of future actions to predict (K)
+action_exec_horizon: 5    # actions to execute before re-planning
+
+# Architecture
+hidden_dim: 512           # residual MLP hidden dimension
+n_blocks: 4               # number of residual blocks
+dropout: 0.1
+
+# Data loading
+max_episodes: 50          # max demonstration episodes to load
+
+# ---------------------------------------------------------------
+# Suggested sweeps for experimentation:
+#
+# Action horizon K (temporal coherence vs. open-loop risk):
+#   action_horizon: 4    # conservative, frequent re-planning
+#   action_horizon: 8    # balanced
+#   action_horizon: 16   # aggressive chunking, smoother motion
+#
+# Execution horizon (how many of K actions to actually use):
+#   action_exec_horizon should be <= action_horizon
+#   Smaller values re-plan more often (safer but noisier)
+#   Larger values commit to longer open-loop sequences
+#
+# Architecture size:
+#   hidden_dim: 256, n_blocks: 2   # lightweight (~200K params)
+#   hidden_dim: 512, n_blocks: 4   # default    (~1.5M params)
+#   hidden_dim: 768, n_blocks: 6   # larger     (~4M params)
+# ---------------------------------------------------------------
 
 # ---------------------------------------------------------------
 # Reference: Official Diffusion Policy config keys
 # (used when training with the robocasa-benchmark/diffusion_policy repo)
 #
 # task: robocasa/OpenCabinet
-# horizon: 16             # prediction horizon (number of future actions)
-# n_obs_steps: 2          # number of observation steps as context
-# n_action_steps: 8       # number of actions to execute per step
+# horizon: 16
+# n_obs_steps: 2
+# n_action_steps: 8
 #
 # policy:
 #   type: diffusion_transformer
