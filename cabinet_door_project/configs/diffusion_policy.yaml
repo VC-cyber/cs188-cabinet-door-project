@@ -11,7 +11,7 @@ save_last_checkpoint: true
 
 # ── Diffusion Policy settings ─────────────────────
 # Used when --policy_type diffusion (the default)
-epochs: 200
+epochs: 50
 batch_size: 256
 chunk_size: 8          # Number of future actions predicted at once
 n_action_steps: 4      # How many of those to execute before re-planning
