@@ -6,6 +6,8 @@
 # ── Common ────────────────────────────────────────
 learning_rate: 0.0001
 checkpoint_dir: /tmp/cabinet_policy_checkpoints
+checkpoint_every_n_epochs: 1
+save_last_checkpoint: true
 
 # ── Diffusion Policy settings ─────────────────────
 # Used when --policy_type diffusion (the default)
