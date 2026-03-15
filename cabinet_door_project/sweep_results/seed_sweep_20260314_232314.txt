@@ -1,0 +1,194 @@
+====================================================================
+OpenCabinet Seed Sweep (bash runner)
+====================================================================
+Started:      Sat Mar 14 23:23:14 PDT 2026
+Seeds:        0 1 2 3 4
+Epochs:       30
+Rollouts:     50
+Max steps:    600
+Split:        pretrain
+Checkpoint root: /tmp/cabinet_policy_seed_sweep_20260314_232314
+Log file:     /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/cabinet_door_project/sweep_results/seed_sweep_20260314_232314.txt
+
+####################################################################
+Seed 0
+####################################################################
+============================================================
+  OpenCabinet - Policy Training
+============================================================
+
+============================================================
+  BC 1D U-Net Policy + Action Chunking
+============================================================
+[robosuite WARNING] No private macro file found! (macros.py:57)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:58)
+[robosuite WARNING] To setup, run: python /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/robosuite/robosuite/scripts/setup_macros.py (macros.py:59)
+[robosuite WARNING] Could not import robosuite_models. Some robots may not be available. If you want to use these robots, please install robosuite_models from source (https://github.com/ARISE-Initiative/robosuite_models) or through pip install. (__init__.py:30)
+[robosuite WARNING] Could not load the mink-based whole-body IK. Make sure you install related import properly (e.g. pip install mink==0.0.5), otherwise you will not be able to use the default IK controller setting for GR1 robot. (__init__.py:40)
+WARNING: mimicgen environments not imported since mimicgen is not installed!
+Dataset: /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/robocasa/datasets/v1.0/pretrain/atomic/OpenCabinet/20250819/lerobot
+
+Loading dataset...
+  Total timesteps: 37492
+  Episodes:        107
+  State dim:       22
+  Action dim:      12
+  Train samples: 28977  Val samples: 5198
+  Chunk size:    16  Execute steps: 8
+
+Device: mps
+
+============================================================
+  Training
+============================================================
+  Max epochs: 30  (early stop patience: 25; best epoch usually 2-5)
+  Batch size: 128  LR: 0.001
+  Epoch    1/30  train_loss: 0.096355  val_loss: 0.064083
+  Epoch    5/30  train_loss: 0.040954  val_loss: 0.050629
+  Epoch   10/30  train_loss: 0.027440  val_loss: 0.050645
+  Epoch   15/30  train_loss: 0.019101  val_loss: 0.057431
+  Epoch   20/30  train_loss: 0.015647  val_loss: 0.055191
+  Epoch   25/30  train_loss: 0.013213  val_loss: 0.056497
+  Epoch   30/30  train_loss: 0.011319  val_loss: 0.059977
+
+Training complete!
+  Best val loss:   0.049039 (epoch 6)
+  Best checkpoint: /tmp/cabinet_policy_seed_sweep_20260314_232314/seed_0/best_policy.pt
+
+============================================================
+  Next Steps
+============================================================
+Evaluate (use >=50 rollouts for stable success rate):
+  python 07_evaluate_policy.py --checkpoint /tmp/cabinet_policy_seed_sweep_20260314_232314/seed_0/best_policy.pt --num_rollouts 50
+
+[robosuite WARNING] No private macro file found! (macros.py:57)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:58)
+[robosuite WARNING] To setup, run: python /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/robosuite/robosuite/scripts/setup_macros.py (macros.py:59)
+[robosuite WARNING] Could not import robosuite_models. Some robots may not be available. If you want to use these robots, please install robosuite_models from source (https://github.com/ARISE-Initiative/robosuite_models) or through pip install. (__init__.py:30)
+[robosuite WARNING] Could not load the mink-based whole-body IK. Make sure you install related import properly (e.g. pip install mink==0.0.5), otherwise you will not be able to use the default IK controller setting for GR1 robot. (__init__.py:40)
+WARNING: mimicgen environments not imported since mimicgen is not installed!
+============================================================
+  OpenCabinet - Policy Evaluation
+============================================================
+Device: cpu
+Policy type:   bc_unet
+Trained epoch: 6, loss=0.036844
+State dim:     22, Action dim: 12
+Chunk size:    16, Action steps: 8
+
+============================================================
+  Evaluating on pretrain split (50 episodes)
+============================================================
+[robosuite INFO] Loading controller configuration from: /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/robosuite/robosuite/controllers/config/robots/default_pandaomron.json (composite_controller_factory.py:121)
+  Episode   1/50: FAIL    (steps= 600, reward=0.0) layout=53, style=37, task="Open the cabinet door."
+  Episode   2/50: FAIL    (steps= 600, reward=0.0) layout=53, style=20, task="Open the cabinet door."
+  Episode   3/50: FAIL    (steps= 600, reward=0.0) layout=56, style=26, task="Open the cabinet door."
+  Episode   4/50: FAIL    (steps= 600, reward=0.0) layout=59, style=41, task="Open the cabinet door."
+  Episode   5/50: FAIL    (steps= 600, reward=0.0) layout=44, style=15, task="Open the cabinet door."
+  Episode   6/50: FAIL    (steps= 600, reward=0.0) layout=54, style=35, task="Open the cabinet door."
+  Episode   7/50: SUCCESS (steps= 176, reward=0.0) layout=36, style=34, task="Open the cabinet doors."
+  Episode   8/50: FAIL    (steps= 600, reward=0.0) layout=41, style=53, task="Open the cabinet door."
+  Episode   9/50: FAIL    (steps= 600, reward=0.0) layout=41, style=44, task="Open the cabinet door."
+  Episode  10/50: FAIL    (steps= 600, reward=0.0) layout=48, style=28, task="Open the cabinet door."
+  Episode  11/50: FAIL    (steps= 600, reward=0.0) layout=60, style=29, task="Open the cabinet doors."
+  Episode  12/50: FAIL    (steps= 600, reward=0.0) layout=35, style=18, task="Open the cabinet doors."
+  Episode  13/50: FAIL    (steps= 600, reward=0.0) layout=57, style=60, task="Open the cabinet door."
+  Episode  14/50: SUCCESS (steps=  80, reward=0.0) layout=42, style=40, task="Open the cabinet doors."
+  Episode  15/50: SUCCESS (steps=  79, reward=0.0) layout=31, style=34, task="Open the cabinet doors."
+  Episode  16/50: FAIL    (steps= 600, reward=0.0) layout=38, style=42, task="Open the cabinet doors."
+  Episode  17/50: SUCCESS (steps= 220, reward=0.0) layout=43, style=38, task="Open the cabinet door."
+  Episode  18/50: SUCCESS (steps= 112, reward=0.0) layout=38, style=20, task="Open the cabinet doors."
+  Episode  19/50: FAIL    (steps= 600, reward=0.0) layout=50, style=58, task="Open the cabinet doors."
+  Episode  20/50: FAIL    (steps= 600, reward=0.0) layout=37, style=43, task="Open the cabinet doors."
+  Episode  21/50: FAIL    (steps= 600, reward=0.0) layout=44, style=12, task="Open the cabinet door."
+  Episode  22/50: SUCCESS (steps=  87, reward=0.0) layout=56, style=20, task="Open the cabinet doors."
+  Episode  23/50: FAIL    (steps= 600, reward=0.0) layout=35, style=56, task="Open the cabinet doors."
+  Episode  24/50: FAIL    (steps= 600, reward=0.0) layout=38, style=41, task="Open the cabinet doors."
+  Episode  25/50: SUCCESS (steps= 104, reward=0.0) layout=16, style=37, task="Open the cabinet doors."
+  Episode  26/50: FAIL    (steps= 600, reward=0.0) layout=48, style=56, task="Open the cabinet doors."
+  Episode  27/50: FAIL    (steps= 600, reward=0.0) layout=49, style=50, task="Open the cabinet doors."
+  Episode  28/50: FAIL    (steps= 600, reward=0.0) layout=33, style=48, task="Open the cabinet door."
+  Episode  29/50: FAIL    (steps= 600, reward=0.0) layout=55, style=13, task="Open the cabinet door."
+  Episode  30/50: FAIL    (steps= 600, reward=0.0) layout=35, style=20, task="Open the cabinet doors."
+  Episode  31/50: FAIL    (steps= 600, reward=0.0) layout=31, style=14, task="Open the cabinet doors."
+  Episode  32/50: SUCCESS (steps=  81, reward=0.0) layout=31, style=57, task="Open the cabinet doors."
+  Episode  33/50: FAIL    (steps= 600, reward=0.0) layout=47, style=15, task="Open the cabinet doors."
+  Episode  34/50: FAIL    (steps= 600, reward=0.0) layout=24, style=35, task="Open the cabinet doors."
+  Episode  35/50: FAIL    (steps= 600, reward=0.0) layout=27, style=45, task="Open the cabinet doors."
+  Episode  36/50: FAIL    (steps= 600, reward=0.0) layout=54, style=50, task="Open the cabinet doors."
+  Episode  37/50: FAIL    (steps= 600, reward=0.0) layout=11, style=56, task="Open the cabinet doors."
+  Episode  38/50: FAIL    (steps= 600, reward=0.0) layout=36, style=17, task="Open the cabinet doors."
+  Episode  39/50: FAIL    (steps= 600, reward=0.0) layout=39, style=15, task="Open the cabinet door."
+  Episode  40/50: FAIL    (steps= 600, reward=0.0) layout=44, style=44, task="Open the cabinet door."
+  Episode  41/50: FAIL    (steps= 600, reward=0.0) layout=26, style=12, task="Open the cabinet doors."
+  Episode  42/50: SUCCESS (steps= 182, reward=0.0) layout=20, style=37, task="Open the cabinet doors."
+  Episode  43/50: SUCCESS (steps= 209, reward=0.0) layout=32, style=55, task="Open the cabinet door."
+  Episode  44/50: FAIL    (steps= 600, reward=0.0) layout=15, style=16, task="Open the cabinet doors."
+  Episode  45/50: FAIL    (steps= 600, reward=0.0) layout=43, style=49, task="Open the cabinet door."
+  Episode  46/50: SUCCESS (steps= 159, reward=0.0) layout=30, style=29, task="Open the cabinet doors."
+  Episode  47/50: SUCCESS (steps=  97, reward=0.0) layout=43, style=44, task="Open the cabinet doors."
+  Episode  48/50: FAIL    (steps= 600, reward=0.0) layout=15, style=32, task="Open the cabinet doors."
+  Episode  49/50: FAIL    (steps= 600, reward=0.0) layout=42, style=20, task="Open the cabinet doors."
+  Episode  50/50: FAIL    (steps= 600, reward=0.0) layout=18, style=28, task="Open the cabinet doors."
+
+============================================================
+  Evaluation Results
+============================================================
+  Split:          pretrain
+  Episodes:       50
+  Successes:      12/50
+  Success rate:   24.0%
+  Avg ep length:  487.7 steps
+  Avg reward:     0.000
+
+============================================================
+  Performance Context
+============================================================
+Expected success rates from the RoboCasa benchmark:
+
+  Method                 | Pretrain | Target
+  -----------------------|----------|-------
+  Random actions         |    ~0%   |   ~0%
+  Simple MLP (baseline)  |    ~0%   |   ~0%
+  Diffusion (low-dim)    |   ~5-15% |  ~3-10%
+  Diffusion Policy (vis) |  ~30-60% | ~20-50%
+  pi-0                   |  ~40-70% | ~30-60%
+
+####################################################################
+Seed 1
+####################################################################
+============================================================
+  OpenCabinet - Policy Training
+============================================================
+
+============================================================
+  BC 1D U-Net Policy + Action Chunking
+============================================================
+[robosuite WARNING] No private macro file found! (macros.py:57)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:58)
+[robosuite WARNING] To setup, run: python /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/robosuite/robosuite/scripts/setup_macros.py (macros.py:59)
+[robosuite WARNING] Could not import robosuite_models. Some robots may not be available. If you want to use these robots, please install robosuite_models from source (https://github.com/ARISE-Initiative/robosuite_models) or through pip install. (__init__.py:30)
+[robosuite WARNING] Could not load the mink-based whole-body IK. Make sure you install related import properly (e.g. pip install mink==0.0.5), otherwise you will not be able to use the default IK controller setting for GR1 robot. (__init__.py:40)
+WARNING: mimicgen environments not imported since mimicgen is not installed!
+Dataset: /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/robocasa/datasets/v1.0/pretrain/atomic/OpenCabinet/20250819/lerobot
+
+Loading dataset...
+  Total timesteps: 37492
+  Episodes:        107
+  State dim:       22
+  Action dim:      12
+  Train samples: 28977  Val samples: 5198
+  Chunk size:    16  Execute steps: 8
+
+Device: mps
+
+============================================================
+  Training
+============================================================
+  Max epochs: 30  (early stop patience: 25; best epoch usually 2-5)
+  Batch size: 128  LR: 0.001
+  Epoch    1/30  train_loss: 0.099501  val_loss: 0.068231
+  Epoch    5/30  train_loss: 0.043432  val_loss: 0.047785
+  Epoch   10/30  train_loss: 0.028637  val_loss: 0.048426
+  Epoch   15/30  train_loss: 0.021141  val_loss: 0.051160
+  Epoch   20/30  train_loss: 0.016419  val_loss: 0.054220

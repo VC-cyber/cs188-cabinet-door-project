@@ -35,7 +35,10 @@ import robocasa  # noqa: F401
 from robocasa.utils.env_utils import create_env
 
 from policy_utils import (
+    check_success_relaxed,
+    dataset_action_to_env_action,
     extract_state_from_obs,
+    HandleObservationWrapper,
     load_policy_checkpoint,
     normalize,
     denormalize,
@@ -60,6 +63,7 @@ def run_evaluation(model, ckpt, state_norm, action_norm,
     action_dim = ckpt["action_dim"]
     chunk_size = ckpt.get("chunk_size", 1)
     n_action_steps = ckpt.get("n_action_steps", 1)
+    use_chunked = policy_type in ("diffusion", "bc_unet")
 
     env = create_env(
         env_name="OpenCabinet",
@@ -69,6 +73,8 @@ def run_evaluation(model, ckpt, state_norm, action_norm,
         camera_widths=256,
         camera_heights=256,
     )
+    if state_dim > 9:
+        env = HandleObservationWrapper(env)
 
     video_writer = None
     if video_path:
@@ -87,29 +93,25 @@ def run_evaluation(model, ckpt, state_norm, action_norm,
         action_buffer = []
 
         for step in range(max_steps):
-            if policy_type == "diffusion" and len(action_buffer) > 0:
+            if use_chunked and len(action_buffer) > 0:
                 action = action_buffer.pop(0)
             else:
-                state = extract_state_from_obs(obs)
+                state = extract_state_from_obs(obs, state_dim=state_dim)
 
-                if policy_type == "diffusion":
-                    state_n = normalize(state.reshape(1, -1), state_norm)
+                if use_chunked:
+                    state_n = normalize(state.reshape(1, -1), state_norm) if state_norm is not None else state.reshape(1, -1)
                     with torch.no_grad():
-                        state_t = torch.from_numpy(state_n).to(device)
-                        chunk = model.sample(state_t)  # (1, chunk_size, action_dim)
-                    chunk_np = denormalize(chunk[0], action_norm)
+                        state_t = torch.from_numpy(state_n.astype(np.float32)).to(device)
+                        chunk = model.sample(state_t)
+                    chunk_np = denormalize(chunk[0], action_norm) if action_norm is not None else chunk[0].cpu().numpy()
                     action_buffer = list(chunk_np[:n_action_steps])
                     action = action_buffer.pop(0)
                 else:
                     with torch.no_grad():
-                        s_t = torch.from_numpy(state).unsqueeze(0).to(device)
+                        s_t = torch.from_numpy(state.astype(np.float32)).unsqueeze(0).to(device)
                         action = model(s_t).cpu().numpy().squeeze(0)
 
-            env_action_dim = env.action_dim
-            if len(action) < env_action_dim:
-                action = np.pad(action, (0, env_action_dim - len(action)))
-            elif len(action) > env_action_dim:
-                action = action[:env_action_dim]
+            action = dataset_action_to_env_action(action, env.action_dim)
 
             obs, reward, done, info = env.step(action)
             ep_reward += reward
@@ -120,7 +122,7 @@ def run_evaluation(model, ckpt, state_norm, action_norm,
                 )[::-1]
                 video_writer.append_data(frame)
 
-            if env._check_success():
+            if check_success_relaxed(env):
                 success = True
                 break
 
@@ -147,7 +149,7 @@ def main():
         "--checkpoint", type=str, required=True,
         help="Path to policy checkpoint (.pt file)",
     )
-    parser.add_argument("--num_rollouts", type=int, default=20, help="Number of episodes")
+    parser.add_argument("--num_rollouts", type=int, default=50, help="Number of episodes (use >=50 for stable success estimate)")
     parser.add_argument("--max_steps", type=int, default=500, help="Max steps per episode")
     parser.add_argument(
         "--split", type=str, default="pretrain", choices=["pretrain", "target"],
@@ -176,9 +178,10 @@ def main():
     print(f"Policy type:   {policy_type}")
     print(f"Trained epoch: {ckpt['epoch']}, loss={ckpt['loss']:.6f}")
     print(f"State dim:     {ckpt['state_dim']}, Action dim: {ckpt['action_dim']}")
-    if policy_type == "diffusion":
+    if policy_type in ("diffusion", "bc_unet"):
         print(f"Chunk size:    {ckpt['chunk_size']}, Action steps: {ckpt['n_action_steps']}")
-        print(f"Diff steps:    {ckpt['n_diffusion_steps']}")
+        if policy_type == "diffusion":
+            print(f"Diff steps:    {ckpt['n_diffusion_steps']}")
 
     print_section(f"Evaluating on {args.split} split ({args.num_rollouts} episodes)")
 

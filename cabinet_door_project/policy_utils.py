@@ -21,6 +21,10 @@ LEROBOT_STATE_KEYS = [
 ]
 
 ROBOSUITE_STATE_KEYS = [
+    # Use 16D proprio to match observation.state in dataset.
+    # Keep stable order for both train/eval.
+    "robot0_base_pos",          # 3D
+    "robot0_base_quat",         # 4D
     "robot0_base_to_eef_pos",   # 3D
     "robot0_base_to_eef_quat",  # 4D
     "robot0_gripper_qpos",      # 2D
@@ -33,6 +37,58 @@ LEROBOT_ACTION_KEYS = [
     "action.base_motion",             # 4D
     "action.control_mode",            # 1D
 ]
+
+# Optional handle features from 05b augmentation (order matches training state)
+LEROBOT_HANDLE_STATE_KEYS = [
+    "observation.handle_pos",           # 3D
+    "observation.handle_to_eef_pos",   # 3D
+]
+# Optional: "observation.door_openness" (1D) can be appended for 16-dim state
+
+# Observation keys for handle at eval (set by wrapper when using augmented state)
+ROBOSUITE_HANDLE_STATE_KEYS = [
+    "robot0_handle_pos",
+    "robot0_handle_to_eef_pos",
+]
+
+
+def _get_handle_feature_mode():
+    """Handle feature mode: both | relative_only | none."""
+    mode = os.environ.get("CABINET_HANDLE_FEATURE_MODE", "both").strip().lower()
+    if mode not in {"both", "relative_only", "none"}:
+        mode = "both"
+    return mode
+
+
+def _selected_lerobot_handle_keys():
+    mode = _get_handle_feature_mode()
+    if mode == "both":
+        return LEROBOT_HANDLE_STATE_KEYS
+    if mode == "relative_only":
+        return ["observation.handle_to_eef_pos"]
+    return []
+
+
+def _selected_robosuite_handle_keys():
+    mode = _get_handle_feature_mode()
+    if mode == "both":
+        return ROBOSUITE_HANDLE_STATE_KEYS
+    if mode == "relative_only":
+        return ["robot0_handle_to_eef_pos"]
+    return []
+
+
+def get_dataset_path():
+    """Get the path to the OpenCabinet dataset (shared by 05b, 06, etc.)."""
+    try:
+        import robocasa  # noqa: F401
+        from robocasa.utils.dataset_registry_utils import get_ds_path
+    except ImportError:
+        return None
+    path = get_ds_path("OpenCabinet", source="human")
+    if path is None or not os.path.exists(path):
+        return None
+    return path
 
 
 # ── Data loading ──────────────────────────────────────────────────────────
@@ -59,25 +115,36 @@ def _extract_column(df, col_name):
 def load_dataset_arrays(dataset_path, max_episodes=None):
     """Load state-action data from LeRobot parquet files.
 
+    Prefers augmented/ dir (from 05b_augment_handle_data.py) when present, so state
+    includes handle_pos and handle_to_eef_pos (15 dims). Otherwise uses data/chunk-000 (9 dims).
+
     Returns (states, actions, episode_ids) as numpy arrays.
     """
     import pyarrow.parquet as pq
 
+    dataset_path = os.path.abspath(dataset_path)
+    aug_dir = os.path.join(dataset_path, "augmented")
     data_dir = os.path.join(dataset_path, "data")
     if not os.path.exists(data_dir):
         data_dir = os.path.join(dataset_path, "lerobot", "data")
     if not os.path.exists(data_dir):
         raise FileNotFoundError(f"Data directory not found under: {dataset_path}")
 
-    chunk_dir = os.path.join(data_dir, "chunk-000")
-    if not os.path.exists(chunk_dir):
-        raise FileNotFoundError(f"Chunk directory not found: {chunk_dir}")
+    # Prefer augmented parquet files when available
+    if os.path.isdir(aug_dir):
+        parquet_files = sorted(f for f in os.listdir(aug_dir) if f.endswith(".parquet"))
+        chunk_dir = aug_dir
+    else:
+        chunk_dir = os.path.join(data_dir, "chunk-000")
+        if not os.path.exists(chunk_dir):
+            raise FileNotFoundError(f"Chunk directory not found: {chunk_dir}")
+        parquet_files = sorted(f for f in os.listdir(chunk_dir) if f.endswith(".parquet"))
 
-    parquet_files = sorted(f for f in os.listdir(chunk_dir) if f.endswith(".parquet"))
     if not parquet_files:
         raise FileNotFoundError(f"No parquet files in {chunk_dir}")
 
     all_states, all_actions, all_ep_ids = [], [], []
+    use_handle = chunk_dir == aug_dir
 
     for pf in parquet_files:
         df = pq.read_table(os.path.join(chunk_dir, pf)).to_pandas()
@@ -90,6 +157,7 @@ def load_dataset_arrays(dataset_path, max_episodes=None):
         if ep_col is None:
             ep_col = np.zeros(len(df), dtype=int)
 
+        # State: proprio (9) then optional handle (6) = [proprio, handle_pos, handle_to_eef_pos]
         state_parts = []
         for key in LEROBOT_STATE_KEYS:
             arr = _extract_column(df, key)
@@ -99,6 +167,16 @@ def load_dataset_arrays(dataset_path, max_episodes=None):
         if not state_parts:
             for c in sorted(c for c in df.columns if c.startswith("state.")):
                 arr = _extract_column(df, c)
+                if arr is not None:
+                    state_parts.append(arr)
+        if not state_parts and "observation.state" in df.columns:
+            arr = _extract_column(df, "observation.state")
+            if arr is not None:
+                state_parts.append(arr)
+
+        if use_handle:
+            for key in _selected_lerobot_handle_keys():
+                arr = _extract_column(df, key)
                 if arr is not None:
                     state_parts.append(arr)
 
@@ -113,6 +191,10 @@ def load_dataset_arrays(dataset_path, max_episodes=None):
                 arr = _extract_column(df, c)
                 if arr is not None:
                     action_parts.append(arr)
+        if not action_parts and "action" in df.columns:
+            arr = _extract_column(df, "action")
+            if arr is not None:
+                action_parts.append(arr)
 
         if state_parts and action_parts:
             all_states.append(np.hstack(state_parts).astype(np.float32))
@@ -174,17 +256,250 @@ def _norm_from_checkpoint(params):
     return {k: np.array(v, dtype=np.float64) if isinstance(v, list) else v for k, v in params.items()}
 
 
+# ── Action reordering and gripper binarization ───────────────────────────
+# Dataset order (verified in WORKING_SETUP + parquet stats):
+# [base_motion(3), torso(1), control_mode(1), eef_pos(3), eef_rot(3), gripper(1)] = 12
+# Env order:
+# [eef_pos(3), eef_rot(3), gripper(1), base_motion(3), torso(1), base_mode(1)] = 12
+# Gripper and base_mode: binarize at 0.0 (>=0 -> 1, <0 -> -1), not 0.5 (WORKING_SETUP).
+
+def dataset_action_to_env_action(policy_action, env_action_dim):
+    """Convert policy output (dataset order) to env action order.
+
+    Dataset action vector is assumed to be:
+      [base_x, base_y, base_yaw, torso, control_mode, eef_x, eef_y, eef_z, rot_x, rot_y, rot_z, gripper]
+    """
+    policy_action = np.atleast_1d(np.asarray(policy_action, dtype=np.float64))
+    # Policy has 12 dims: base(0:3), torso(3), control_mode(4), eef_pos(5:8), eef_rot(8:11), gripper(11)
+    if len(policy_action) >= 12:
+        base_motion_3 = policy_action[0:3]
+        torso = policy_action[3]
+        control_mode_raw = policy_action[4]
+        eef_pos = policy_action[5:8]
+        eef_rot = policy_action[8:11]
+        gripper_raw = policy_action[11]
+        gripper_bin = 1.0 if gripper_raw >= 0.0 else -1.0
+        base_mode_bin = 1.0 if control_mode_raw >= 0.0 else -1.0
+        env_action = np.concatenate([
+            eef_pos,
+            eef_rot,
+            [gripper_bin],
+            base_motion_3,
+            [torso],
+            [base_mode_bin],
+        ]).astype(np.float32)
+    else:
+        env_action = np.zeros(env_action_dim, dtype=np.float32)
+        copy_len = min(len(policy_action), env_action_dim)
+        env_action[:copy_len] = policy_action[:copy_len]
+        if copy_len > 6:
+            env_action[6] = 1.0 if env_action[6] >= 0.0 else -1.0
+        if copy_len > 11:
+            env_action[11] = 1.0 if env_action[11] >= 0.0 else -1.0
+
+    if len(env_action) < env_action_dim:
+        env_action = np.pad(env_action, (0, env_action_dim - len(env_action)))
+    elif len(env_action) > env_action_dim:
+        env_action = env_action[:env_action_dim]
+    return env_action
+
+
 # ── State extraction (evaluation) ────────────────────────────────────────
 
-def extract_state_from_obs(obs):
-    """Extract a state vector from robosuite observations using the fixed key order."""
+def get_state_dim_from_obs(obs):
+    """Return state dimension that extract_state_from_obs would produce (9 or 15 with handle)."""
+    dim = 0
+    for key in ROBOSUITE_STATE_KEYS:
+        if key in obs:
+            dim += np.size(obs[key])
+    for key in _selected_robosuite_handle_keys():
+        if key in obs:
+            dim += np.size(obs[key])
+    return dim if dim > 0 else 9
+
+
+def extract_state_from_obs(obs, state_dim=None):
+    """Extract a state vector from robosuite observations using the fixed key order.
+
+    If obs contains handle keys from wrapper, appends those according to
+    CABINET_HANDLE_FEATURE_MODE so eval matches training feature selection.
+    """
     parts = []
     for key in ROBOSUITE_STATE_KEYS:
         if key in obs:
             parts.append(obs[key].flatten().astype(np.float32))
+    for key in _selected_robosuite_handle_keys():
+        if key in obs:
+            parts.append(obs[key].flatten().astype(np.float32))
     if not parts:
         return np.zeros(9, dtype=np.float32)
-    return np.concatenate(parts)
+    out = np.concatenate(parts)
+    if state_dim is not None and len(out) != state_dim:
+        if len(out) < state_dim:
+            out = np.pad(out, (0, state_dim - len(out)))
+        else:
+            out = out[:state_dim]
+    return out
+
+
+# ── Relaxed success (one door open) ───────────────────────────────────────
+
+DOOR_OPEN_THRESHOLD_RAD = 0.3  # ~17 degrees; any hinge beyond this counts as success
+
+
+def check_success_relaxed(env):
+    """Return True if any cabinet door joint is open beyond DOOR_OPEN_THRESHOLD_RAD.
+
+    Use instead of env._check_success() so one open door counts as success.
+    Falls back to env._check_success() if we cannot read door joints.
+    """
+    try:
+        sim = env.sim
+        if sim is None:
+            return env._check_success()
+        fxtr = getattr(env, "fxtr", None)
+        if fxtr is None:
+            return env._check_success()
+        fixture_name = getattr(fxtr, "name", None) or ""
+        model = sim.model
+        data = sim.data
+        for i in range(model.njnt):
+            jname = model.joint(i).name
+            if fixture_name in jname and "door" in jname:
+                addr = model.joint(i).qposadr[0]
+                qpos = data.qpos[addr]
+                jrange = model.jnt_range[i]
+                jmin, jmax = jrange[0], jrange[1]
+                if jmax - jmin > 1e-8:
+                    dist_closed = min(abs(qpos - jmin), abs(qpos - jmax))
+                    if abs(jmin) < abs(jmax):
+                        dist_closed = abs(qpos - jmin)
+                    else:
+                        dist_closed = abs(qpos - jmax)
+                    if dist_closed > DOOR_OPEN_THRESHOLD_RAD:
+                        return True
+        return env._check_success()
+    except Exception:
+        return env._check_success()
+
+
+# ── Observation wrapper for handle state at eval ──────────────────────────
+
+def _get_handle_state_from_env(env):
+    """Get handle_pos (3) and handle_to_eef_pos (3) from env sim; return None on failure.
+
+    Matches 05b augmentation logic:
+    - Build handle<->door-joint associations
+    - Prefer handles whose doors are not yet open (openness < 0.9)
+    - Among candidates, choose nearest to current EEF
+    """
+    try:
+        sim = env.sim
+        fxtr = getattr(env, "fxtr", None)
+        if sim is None or fxtr is None:
+            return None
+        fixture_name = getattr(fxtr, "name", None) or ""
+        model = sim.model
+        data = sim.data
+        # Find handle bodies
+        handle_bodies = []
+        for i in range(model.nbody):
+            name = model.body(i).name
+            if fixture_name in name and "handle" in name:
+                handle_bodies.append(name)
+        if not handle_bodies:
+            return None
+
+        # Find door joints for this fixture
+        door_joints = []
+        for i in range(model.njnt):
+            jname = model.joint(i).name
+            if fixture_name in jname and "door" in jname:
+                door_joints.append((jname, i))
+
+        # Build handle->joint map (left/right-aware)
+        if len(handle_bodies) == 1 or len(door_joints) == 1:
+            handle_to_joint_map = {hb: door_joints for hb in handle_bodies}
+        else:
+            handle_to_joint_map = {}
+            for hb in handle_bodies:
+                hbl = hb.lower()
+                if "left" in hbl:
+                    matched = [(jn, ji) for jn, ji in door_joints if "left" in jn.lower()]
+                elif "right" in hbl:
+                    matched = [(jn, ji) for jn, ji in door_joints if "right" in jn.lower()]
+                else:
+                    matched = []
+                handle_to_joint_map[hb] = matched if matched else door_joints
+
+        def _door_openness_for_handle(hb):
+            joints = handle_to_joint_map.get(hb, [])
+            if not joints:
+                return 0.0
+            vals = []
+            for _, jidx in joints:
+                addr = model.joint(jidx).qposadr[0]
+                qpos = data.qpos[addr]
+                jmin, jmax = model.jnt_range[jidx]
+                if jmax - jmin > 1e-8:
+                    # Closed position is bound closest to 0 (same as 05b)
+                    if abs(jmin) < abs(jmax):
+                        norm = abs(qpos - jmin) / (jmax - jmin)
+                    else:
+                        norm = abs(qpos - jmax) / (jmax - jmin)
+                else:
+                    norm = 0.0
+                vals.append(float(np.clip(norm, 0.0, 1.0)))
+            return float(np.mean(vals))
+
+        eef_pos = data.body("gripper0_right_eef").xpos.copy()
+        # Prefer unopened doors first (same OPEN_THRESHOLD as 05b)
+        OPEN_THRESHOLD = 0.90
+        active = [hb for hb in handle_bodies if _door_openness_for_handle(hb) < OPEN_THRESHOLD]
+        candidates = active if active else handle_bodies
+
+        # Use nearest handle among candidates
+        handle_pos = None
+        best_dist = float("inf")
+        for hb in candidates:
+            pos = data.body(hb).xpos.copy()
+            d = np.linalg.norm(pos - eef_pos)
+            if d < best_dist:
+                best_dist = d
+                handle_pos = pos
+        if handle_pos is None:
+            return None
+        # WORKING_SETUP convention: handle_to_eef = eef_pos - handle_pos
+        handle_to_eef = eef_pos - handle_pos
+        return {"robot0_handle_pos": handle_pos.astype(np.float32), "robot0_handle_to_eef_pos": handle_to_eef.astype(np.float32)}
+    except Exception:
+        return None
+
+
+class HandleObservationWrapper:
+    """Wraps env so obs includes robot0_handle_pos and robot0_handle_to_eef_pos for 15-dim state."""
+
+    def __init__(self, env):
+        self._env = env
+
+    def __getattr__(self, name):
+        return getattr(self._env, name)
+
+    def reset(self):
+        obs = self._env.reset()
+        self._inject_handle(obs)
+        return obs
+
+    def step(self, action):
+        obs, reward, done, info = self._env.step(action)
+        self._inject_handle(obs)
+        return obs, reward, done, info
+
+    def _inject_handle(self, obs):
+        h = _get_handle_state_from_env(self._env)
+        if h:
+            obs["robot0_handle_pos"] = h["robot0_handle_pos"]
+            obs["robot0_handle_to_eef_pos"] = h["robot0_handle_to_eef_pos"]
 
 
 # ── Model definitions ─────────────────────────────────────────────────────
@@ -324,6 +639,100 @@ def build_diffusion_policy(state_dim, action_dim, chunk_size=8,
     return DiffusionPolicy()
 
 
+def build_bc_unet_policy(state_dim, action_dim, chunk_size=16, hidden_dim=256, n_channels=32):
+    """BC policy with 1D convolutional U-Net backbone; predicts action chunk from state.
+
+    Input: state (B, state_dim). Output: (B, chunk_size, action_dim).
+    Small (~few M params) to avoid overfitting on ~100 demos.
+    """
+    import torch
+    import torch.nn as nn
+
+    class Conv1dBlock(nn.Module):
+        def __init__(self, in_c, out_c, kernel_size=3):
+            super().__init__()
+            self.conv = nn.Conv1d(in_c, out_c, kernel_size, padding=kernel_size // 2)
+            self.norm = nn.GroupNorm(min(8, out_c), out_c)
+            self.act = nn.Mish()
+
+        def forward(self, x):
+            return self.act(self.norm(self.conv(x)))
+
+    class BCUnetPolicy(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.state_dim = state_dim
+            self.action_dim = action_dim
+            self.chunk_size = chunk_size
+            self.output_dim = action_dim * chunk_size
+
+            self.state_enc = nn.Sequential(
+                nn.Linear(state_dim, hidden_dim),
+                nn.Mish(),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+            # Condition as extra channels: (B, n_channels + action_dim, chunk_size)
+            self.proj = nn.Linear(hidden_dim, n_channels * chunk_size)
+
+            # 1D U-Net: input (B, n_channels + action_dim, chunk_size), output (B, action_dim, chunk_size)
+            c = n_channels
+            self.enc1 = nn.Sequential(
+                Conv1dBlock(n_channels + action_dim, c),
+                Conv1dBlock(c, c),
+            )
+            self.enc2 = nn.Sequential(
+                nn.Conv1d(c, c * 2, 3, stride=2, padding=1),
+                nn.GroupNorm(8, c * 2),
+                nn.Mish(),
+                Conv1dBlock(c * 2, c * 2),
+            )
+            self.enc3 = nn.Sequential(
+                nn.Conv1d(c * 2, c * 4, 3, stride=2, padding=1),
+                nn.GroupNorm(8, c * 4),
+                nn.Mish(),
+                Conv1dBlock(c * 4, c * 4),
+            )
+            self.bottleneck = nn.Sequential(
+                Conv1dBlock(c * 4, c * 4),
+                Conv1dBlock(c * 4, c * 4),
+            )
+            self.dec3 = nn.Sequential(
+                Conv1dBlock(c * 4 + c * 2, c * 2),
+                Conv1dBlock(c * 2, c * 2),
+            )
+            self.dec2 = nn.Sequential(
+                Conv1dBlock(c * 2 + c, c),
+                Conv1dBlock(c, c),
+            )
+            self.dec1 = nn.Sequential(
+                Conv1dBlock(c + n_channels, c),
+                nn.Conv1d(c, action_dim, 1),
+            )
+
+        def forward(self, state):
+            B = state.shape[0]
+            s_emb = self.state_enc(state)
+            cond = self.proj(s_emb).reshape(B, n_channels, self.chunk_size)
+            zeros = torch.zeros(B, self.action_dim, self.chunk_size, device=state.device, dtype=state.dtype)
+            x = torch.cat([cond, zeros], dim=1)
+            e1 = self.enc1(x)
+            e2 = self.enc2(e1)
+            e3 = self.enc3(e2)
+            b = self.bottleneck(e3)
+            d3 = nn.functional.interpolate(b, size=e2.shape[2], mode="linear", align_corners=False)
+            d3 = self.dec3(torch.cat([d3, e2], dim=1))
+            d2 = nn.functional.interpolate(d3, size=e1.shape[2], mode="linear", align_corners=False)
+            d2 = self.dec2(torch.cat([d2, e1], dim=1))
+            out = self.dec1(torch.cat([d2, x[:, :n_channels]], dim=1))
+            return out.permute(0, 2, 1)
+
+        @torch.no_grad()
+        def sample(self, state):
+            return self.forward(state)
+
+    return BCUnetPolicy()
+
+
 # ── Policy loading ────────────────────────────────────────────────────────
 
 def load_policy_checkpoint(checkpoint_path, device=None):
@@ -354,6 +763,21 @@ def load_policy_checkpoint(checkpoint_path, device=None):
 
         state_norm = _norm_from_checkpoint(ckpt["state_norm"])
         action_norm = _norm_from_checkpoint(ckpt["action_norm"])
+        return model, ckpt, state_norm, action_norm
+
+    elif policy_type == "bc_unet":
+        model = build_bc_unet_policy(
+            state_dim=ckpt["state_dim"],
+            action_dim=ckpt["action_dim"],
+            chunk_size=ckpt["chunk_size"],
+            hidden_dim=ckpt.get("hidden_dim", 256),
+            n_channels=ckpt.get("n_channels", 32),
+        ).to(device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        model.eval()
+
+        state_norm = _norm_from_checkpoint(ckpt["state_norm"]) if ckpt.get("state_norm") else None
+        action_norm = _norm_from_checkpoint(ckpt["action_norm"]) if ckpt.get("action_norm") else None
         return model, ckpt, state_norm, action_norm
 
     else:

@@ -1,0 +1,24 @@
+======================================================================
+OpenCabinet Overnight Seed Sweep
+======================================================================
+Started:         2026-03-14T23:18:59.936108
+Script dir:      /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/cabinet_door_project
+Policy type:     bc_unet
+Seeds:           [0, 1, 2, 3, 4]
+Epochs:          30
+Eval rollouts:   50
+Eval split:      pretrain
+Checkpoint root: /private/tmp/cabinet_policy_seed_sweep
+======================================================================
+
+
+######################################################################
+Seed 0 (1/5)
+######################################################################
+
+$ /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/.venv/bin/python 06_train_policy.py --policy_type bc_unet --epochs 30 --checkpoint_dir /private/tmp/cabinet_policy_seed_sweep/seed_0
+[robosuite WARNING] No private macro file found! (macros.py:57)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:58)
+[robosuite WARNING] To setup, run: python /Users/venkatchitturi/Documents/GitHub/cs188-cabinet-door-project-1/robosuite/robosuite/scripts/setup_macros.py (macros.py:59)
+[robosuite WARNING] Could not import robosuite_models. Some robots may not be available. If you want to use these robots, please install robosuite_models from source (https://github.com/ARISE-Initiative/robosuite_models) or through pip install. (__init__.py:30)
+[robosuite WARNING] Could not load the mink-based whole-body IK. Make sure you install related import properly (e.g. pip install mink==0.0.5), otherwise you will not be able to use the default IK controller setting for GR1 robot. (__init__.py:40)

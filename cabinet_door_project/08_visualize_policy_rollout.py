@@ -63,7 +63,10 @@ from robosuite.controllers import load_composite_controller_config
 from robosuite.wrappers import VisualizationWrapper
 
 from policy_utils import (
+    check_success_relaxed,
+    dataset_action_to_env_action,
     extract_state_from_obs,
+    HandleObservationWrapper,
     load_policy_checkpoint,
     normalize,
     denormalize,
@@ -71,44 +74,33 @@ from policy_utils import (
 
 
 def _predict_action(model, obs, ckpt, state_norm, action_norm, action_buffer, device):
-    """Get the next action from the policy, handling both MLP and diffusion types."""
+    """Get the next action from the policy (MLP, diffusion, or bc_unet)."""
     import torch
 
     policy_type = ckpt.get("policy_type", "mlp")
+    state_dim = ckpt["state_dim"]
+    use_chunked = policy_type in ("diffusion", "bc_unet")
 
-    if policy_type == "diffusion" and len(action_buffer) > 0:
+    if use_chunked and len(action_buffer) > 0:
         return action_buffer.pop(0), action_buffer
 
-    state = extract_state_from_obs(obs)
+    state = extract_state_from_obs(obs, state_dim=state_dim)
 
-    if policy_type == "diffusion":
-        state_n = normalize(state.reshape(1, -1), state_norm)
+    if use_chunked:
+        state_n = normalize(state.reshape(1, -1), state_norm) if state_norm is not None else state.reshape(1, -1).astype(np.float32)
         with torch.no_grad():
             state_t = torch.from_numpy(state_n).to(device)
-            chunk = model.sample(state_t)  # (1, chunk_size, action_dim)
-        chunk_np = denormalize(chunk[0], action_norm)
+            chunk = model.sample(state_t)
+        chunk_np = denormalize(chunk[0], action_norm) if action_norm is not None else chunk[0].cpu().numpy()
         n_action_steps = ckpt.get("n_action_steps", 4)
         new_buffer = list(chunk_np[:n_action_steps])
         action = new_buffer.pop(0)
         return action, new_buffer
     else:
-        state_dim = ckpt["state_dim"]
-        if len(state) < state_dim:
-            state = np.pad(state, (0, state_dim - len(state)))
-        elif len(state) > state_dim:
-            state = state[:state_dim]
         with torch.no_grad():
-            s_t = torch.from_numpy(state).unsqueeze(0).to(device)
+            s_t = torch.from_numpy(state.astype(np.float32)).unsqueeze(0).to(device)
             action = model(s_t).cpu().numpy().squeeze(0)
         return action, action_buffer
-
-
-def _pad_action(action, env_dim):
-    if len(action) < env_dim:
-        return np.pad(action, (0, env_dim - len(action)))
-    elif len(action) > env_dim:
-        return action[:env_dim]
-    return action
 
 
 # ── On-screen rollout ────────────────────────────────────────────────────
@@ -130,6 +122,8 @@ def run_onscreen(model, ckpt, state_norm, action_norm, args):
         renderer="mjviewer",
     )
     env = VisualizationWrapper(env)
+    if ckpt.get("state_dim", 9) > 9:
+        env = HandleObservationWrapper(env)
 
     successes = 0
     for ep in range(args.num_episodes):
@@ -148,15 +142,15 @@ def run_onscreen(model, ckpt, state_norm, action_norm, args):
             action, action_buffer = _predict_action(
                 model, obs, ckpt, state_norm, action_norm, action_buffer, device
             )
-            action = _pad_action(action, env.action_dim)
+            action = dataset_action_to_env_action(action, env.action_dim)
             obs, reward, done, info = env.step(action)
 
             if step % 20 == 0:
-                is_open = env._check_success()
+                is_open = check_success_relaxed(env)
                 status = "cabinet OPEN" if is_open else "in progress"
                 print(f"  step {step:4d}  reward={reward:+.3f}  [{status}]")
 
-            if env._check_success():
+            if check_success_relaxed(env):
                 hold_count += 1
                 if hold_count >= 15:
                     success = True
@@ -191,6 +185,7 @@ def run_offscreen(model, ckpt, state_norm, action_norm, args):
     successes = 0
     all_frames = []
 
+    state_dim = ckpt.get("state_dim", 9)
     for ep in range(args.num_episodes):
         print(f"\n--- Episode {ep+1}/{args.num_episodes} ---")
         env = create_env(
@@ -200,6 +195,8 @@ def run_offscreen(model, ckpt, state_norm, action_norm, args):
             camera_widths=cam_w,
             camera_heights=cam_h,
         )
+        if state_dim > 9:
+            env = HandleObservationWrapper(env)
         obs = env.reset()
         ep_meta = env.get_ep_meta()
         lang = ep_meta.get("lang", "")
@@ -215,7 +212,7 @@ def run_offscreen(model, ckpt, state_norm, action_norm, args):
             action, action_buffer = _predict_action(
                 model, obs, ckpt, state_norm, action_norm, action_buffer, device
             )
-            action = _pad_action(action, env.action_dim)
+            action = dataset_action_to_env_action(action, env.action_dim)
             obs, reward, done, info = env.step(action)
 
             frame = env.sim.render(
@@ -224,11 +221,11 @@ def run_offscreen(model, ckpt, state_norm, action_norm, args):
             ep_frames.append(frame)
 
             if step % 20 == 0:
-                is_open = env._check_success()
+                is_open = check_success_relaxed(env)
                 status = "cabinet OPEN" if is_open else "in progress"
                 print(f"  step {step:4d}  reward={reward:+.3f}  [{status}]")
 
-            if env._check_success():
+            if check_success_relaxed(env):
                 hold_count += 1
                 if hold_count >= 15:
                     success = True
@@ -295,7 +292,7 @@ def main():
     print(f"Policy type: {policy_type}")
     print(f"  Epoch {ckpt['epoch']}, loss {ckpt['loss']:.6f}")
     print(f"  State dim: {ckpt['state_dim']},  Action dim: {ckpt['action_dim']}")
-    if policy_type == "diffusion":
+    if policy_type in ("diffusion", "bc_unet"):
         print(f"  Chunk size: {ckpt['chunk_size']}, Action steps: {ckpt['n_action_steps']}")
     print(f"  Device: {device}")
     print()

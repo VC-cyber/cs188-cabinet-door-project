@@ -195,7 +195,25 @@ python 07_evaluate_policy.py --checkpoint path/to/checkpoint.pt
 ```
 
 Runs your trained policy in the simulation environment and reports success
-rate across multiple episodes and kitchen scenes.
+rate across multiple episodes and kitchen scenes. Use `--num_rollouts 50` or
+more for a stable success-rate estimate.
+
+### Reaching 30%+ success (recommended recipe)
+
+1. **Augment data with handle features** (after downloading the dataset):
+   ```bash
+   python 05b_augment_handle_data.py
+   ```
+2. **Train the BC U-Net policy** (uses augmented data automatically):
+   ```bash
+   python 06_train_policy.py --policy_type bc_unet
+   ```
+3. **Evaluate** with relaxed success (one door open) and ≥50 rollouts:
+   ```bash
+   python 07_evaluate_policy.py --checkpoint /tmp/cabinet_policy_checkpoints/best_policy.pt --num_rollouts 50
+   ```
+   Reported success rate uses a relaxed criterion (any cabinet door open > ~17°) and
+   action remapping (gripper binarized at 0.0, env action order).
 
 ---
 

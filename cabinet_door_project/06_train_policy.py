@@ -29,9 +29,11 @@ import yaml
 import numpy as np
 
 from policy_utils import (
+    build_bc_unet_policy,
     build_diffusion_policy,
     build_simple_policy,
     compute_norm_params,
+    get_dataset_path as get_dataset_path_from_utils,
     load_dataset_arrays,
     normalize,
     _norm_to_serializable,
@@ -50,10 +52,7 @@ def load_config(config_path):
 
 
 def get_dataset_path():
-    import robocasa  # noqa: F401
-    from robocasa.utils.dataset_registry_utils import get_ds_path
-
-    path = get_ds_path("OpenCabinet", source="human")
+    path = get_dataset_path_from_utils()
     if path is None or not os.path.exists(path):
         print("ERROR: Dataset not found. Run 04_download_dataset.py first.")
         sys.exit(1)
@@ -235,6 +234,193 @@ def _save_diffusion_ckpt(path, model, optimizer, epoch, loss,
     }, path)
 
 
+# ── BC U-Net training (val split, early stopping, boundary masking) ───────
+
+def train_bc_unet_policy(config):
+    """Train BC policy with 1D U-Net; episode-level val split, early stopping, skip first chunk_size steps."""
+    try:
+        import torch
+        import torch.nn as nn
+        from torch.utils.data import DataLoader, TensorDataset
+    except ImportError:
+        print("ERROR: PyTorch is required.  pip install torch")
+        sys.exit(1)
+
+    print_section("BC 1D U-Net Policy + Action Chunking")
+
+    dataset_path = get_dataset_path()
+    print(f"Dataset: {dataset_path}")
+
+    print("\nLoading dataset...")
+    states, actions, episode_ids = load_dataset_arrays(dataset_path)
+    unique_ep = np.unique(episode_ids)
+    n_episodes = len(unique_ep)
+    print(f"  Total timesteps: {len(states)}")
+    print(f"  Episodes:        {n_episodes}")
+    print(f"  State dim:       {states.shape[-1]}")
+    print(f"  Action dim:      {actions.shape[-1]}")
+
+    state_dim = states.shape[-1]
+    action_dim = actions.shape[-1]
+    chunk_size = config.get("chunk_size", 16)
+    n_action_steps = config.get("n_action_steps", 8)
+    hidden_dim = config.get("hidden_dim", 256)
+    n_channels = config.get("n_channels", 32)
+    epochs = config.get("epochs", 50)
+    batch_size = config.get("batch_size", 128)
+    lr = config.get("learning_rate", 1e-3)
+    val_ratio = config.get("val_ratio", 0.15)
+    patience = config.get("patience", 25)
+    checkpoint_dir = config.get("checkpoint_dir", "/tmp/cabinet_policy_checkpoints")
+
+    state_norm = compute_norm_params(states)
+    action_norm = compute_norm_params(actions)
+    states_n = normalize(states, state_norm)
+    actions_n = normalize(actions, action_norm)
+
+    np.random.seed(config.get("seed", 42))
+    perm_ep = np.random.permutation(unique_ep)
+    n_val = max(1, int(n_episodes * val_ratio))
+    val_ep_ids = set(perm_ep[:n_val])
+    train_ep_ids = set(perm_ep[n_val:])
+
+    state_chunks = []
+    action_chunks = []
+    for ep_id in unique_ep:
+        mask = episode_ids == ep_id
+        ep_s = states_n[mask]
+        ep_a = actions_n[mask]
+        for t in range(chunk_size, len(ep_s)):
+            if t + chunk_size > len(ep_a):
+                break
+            chunk = ep_a[t : t + chunk_size]
+            if len(chunk) < chunk_size:
+                pad = np.tile(chunk[-1:], (chunk_size - len(chunk), 1))
+                chunk = np.concatenate([chunk, pad], axis=0)
+            state_chunks.append((ep_id, ep_s[t], chunk))
+            action_chunks.append(chunk)
+
+    train_indices = [i for i, (ep_id, _, _) in enumerate(state_chunks) if ep_id in train_ep_ids]
+    val_indices = [i for i, (ep_id, _, _) in enumerate(state_chunks) if ep_id in val_ep_ids]
+
+    train_states = np.array([state_chunks[i][1] for i in train_indices], dtype=np.float32)
+    train_actions = np.array([action_chunks[i] for i in train_indices], dtype=np.float32)
+    val_states = np.array([state_chunks[i][1] for i in val_indices], dtype=np.float32)
+    val_actions = np.array([action_chunks[i] for i in val_indices], dtype=np.float32)
+
+    print(f"  Train samples: {len(train_states)}  Val samples: {len(val_states)}")
+    print(f"  Chunk size:    {chunk_size}  Execute steps: {n_action_steps}")
+
+    train_ds = TensorDataset(
+        torch.from_numpy(train_states),
+        torch.from_numpy(train_actions),
+    )
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0,
+    )
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+    print(f"\nDevice: {device}")
+
+    model = build_bc_unet_policy(
+        state_dim, action_dim,
+        chunk_size=chunk_size,
+        hidden_dim=hidden_dim,
+        n_channels=n_channels,
+    ).to(device)
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-6)
+
+    print_section("Training")
+    print(f"  Max epochs: {epochs}  (early stop patience: {patience}; best epoch usually 2-5)")
+    print(f"  Batch size: {batch_size}  LR: {lr}")
+
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    best_val_loss = float("inf")
+    best_epoch = 0
+    no_improve = 0
+
+    for epoch in range(epochs):
+        model.train()
+        train_loss = 0.0
+        n_b = 0
+        for s_b, a_b in train_loader:
+            s_b = s_b.to(device)
+            a_b = a_b.to(device)
+            pred = model(s_b)
+            loss = nn.functional.mse_loss(pred, a_b)
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            train_loss += loss.item()
+            n_b += 1
+        train_loss /= max(n_b, 1)
+
+        model.eval()
+        with torch.no_grad():
+            v_s = torch.from_numpy(val_states).to(device)
+            v_a = torch.from_numpy(val_actions).to(device)
+            v_pred = model(v_s)
+            val_loss = nn.functional.mse_loss(v_pred, v_a).item()
+
+        if (epoch + 1) % 5 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:4d}/{epochs}  train_loss: {train_loss:.6f}  val_loss: {val_loss:.6f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch + 1
+            no_improve = 0
+            torch.save({
+                "policy_type": "bc_unet",
+                "epoch": epoch + 1,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "loss": train_loss,
+                "state_dim": state_dim,
+                "action_dim": action_dim,
+                "chunk_size": chunk_size,
+                "n_action_steps": n_action_steps,
+                "hidden_dim": hidden_dim,
+                "n_channels": n_channels,
+                "state_norm": _norm_to_serializable(state_norm),
+                "action_norm": _norm_to_serializable(action_norm),
+            }, os.path.join(checkpoint_dir, "best_policy.pt"))
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"  Early stopping at epoch {epoch+1} (best epoch {best_epoch})")
+                break
+
+    final_path = os.path.join(checkpoint_dir, "final_policy.pt")
+    torch.save({
+        "policy_type": "bc_unet",
+        "epoch": epoch + 1,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "loss": train_loss,
+        "state_dim": state_dim,
+        "action_dim": action_dim,
+        "chunk_size": chunk_size,
+        "n_action_steps": n_action_steps,
+        "hidden_dim": hidden_dim,
+        "n_channels": n_channels,
+        "state_norm": _norm_to_serializable(state_norm),
+        "action_norm": _norm_to_serializable(action_norm),
+    }, final_path)
+
+    print(f"\nTraining complete!")
+    print(f"  Best val loss:   {best_val_loss:.6f} (epoch {best_epoch})")
+    print(f"  Best checkpoint: {os.path.join(checkpoint_dir, 'best_policy.pt')}")
+    print_section("Next Steps")
+    print(
+        "Evaluate (use >=50 rollouts for stable success rate):\n"
+        f"  python 07_evaluate_policy.py --checkpoint {os.path.join(checkpoint_dir, 'best_policy.pt')} --num_rollouts 50\n"
+    )
+
+
 # ── Simple MLP training (original baseline) ──────────────────────────────
 
 def train_simple_policy(config):
@@ -391,15 +577,17 @@ def main():
     parser.add_argument(
         "--policy_type",
         type=str,
-        default="diffusion",
-        choices=["mlp", "diffusion"],
-        help="Policy architecture (default: diffusion)",
+        default="bc_unet",
+        choices=["mlp", "diffusion", "bc_unet"],
+        help="Policy architecture (default: bc_unet for 30%%+ success)",
     )
     parser.add_argument("--epochs", type=int, default=None, help="Training epochs")
     parser.add_argument("--batch_size", type=int, default=None, help="Batch size")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate")
-    parser.add_argument("--chunk_size", type=int, default=8, help="Action chunk size (diffusion only)")
-    parser.add_argument("--n_action_steps", type=int, default=4, help="Steps to execute per chunk")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--n_channels", type=int, default=32, help="BC U-Net base channels")
+    parser.add_argument("--chunk_size", type=int, default=16, help="Action chunk size (diffusion/bc_unet)")
+    parser.add_argument("--n_action_steps", type=int, default=8, help="Steps to execute per chunk")
     parser.add_argument("--n_diffusion_steps", type=int, default=50, help="DDPM diffusion steps")
     parser.add_argument("--hidden_dim", type=int, default=256, help="Hidden layer dimension")
     parser.add_argument(
@@ -439,6 +627,20 @@ def main():
                 "n_diffusion_steps": args.n_diffusion_steps,
                 "hidden_dim": args.hidden_dim,
             }
+        elif args.policy_type == "bc_unet":
+            config = {
+                "epochs": args.epochs or 50,
+                "batch_size": args.batch_size or 128,
+                "learning_rate": args.lr or 1e-3,
+                "checkpoint_dir": args.checkpoint_dir,
+                "chunk_size": args.chunk_size or 16,
+                "n_action_steps": args.n_action_steps or 8,
+                "hidden_dim": args.hidden_dim or 256,
+                "n_channels": args.n_channels,
+                "val_ratio": 0.15,
+                "patience": 25,
+                "seed": args.seed,
+            }
         else:
             config = {
                 "epochs": args.epochs or 50,
@@ -449,6 +651,8 @@ def main():
 
     if args.policy_type == "diffusion":
         train_diffusion_policy(config)
+    elif args.policy_type == "bc_unet":
+        train_bc_unet_policy(config)
     else:
         train_simple_policy(config)
 
