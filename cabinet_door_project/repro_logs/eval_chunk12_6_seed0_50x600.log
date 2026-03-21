@@ -1,0 +1,87 @@
+WARNING: mimicgen environments not imported since mimicgen is not installed!
+============================================================
+  OpenCabinet - Policy Evaluation
+============================================================
+Device: cpu
+Policy type:   bc_unet
+Trained epoch: 7, loss=0.035128
+State dim:     22, Action dim: 12
+Chunk size:    12, Action steps: 6
+
+============================================================
+  Evaluating on pretrain split (50 episodes)
+============================================================
+  Episode   1/50: FAIL    (steps= 600, reward=0.0) layout=53, style=37, task="Open the cabinet door."
+  Episode   2/50: FAIL    (steps= 600, reward=0.0) layout=53, style=20, task="Open the cabinet door."
+  Episode   3/50: SUCCESS (steps=  98, reward=0.0) layout=56, style=26, task="Open the cabinet door."
+  Episode   4/50: SUCCESS (steps= 230, reward=0.0) layout=52, style=48, task="Open the cabinet doors."
+  Episode   5/50: FAIL    (steps= 600, reward=0.0) layout=56, style=32, task="Open the cabinet doors."
+  Episode   6/50: FAIL    (steps= 600, reward=0.0) layout=53, style=33, task="Open the cabinet doors."
+  Episode   7/50: FAIL    (steps= 600, reward=0.0) layout=28, style=41, task="Open the cabinet doors."
+  Episode   8/50: SUCCESS (steps=  90, reward=0.0) layout=38, style=53, task="Open the cabinet doors."
+  Episode   9/50: FAIL    (steps= 600, reward=0.0) layout=30, style=33, task="Open the cabinet doors."
+  Episode  10/50: SUCCESS (steps=  81, reward=0.0) layout=60, style=60, task="Open the cabinet doors."
+  Episode  11/50: SUCCESS (steps=  85, reward=0.0) layout=23, style=34, task="Open the cabinet doors."
+  Episode  12/50: SUCCESS (steps=  91, reward=0.0) layout=11, style=59, task="Open the cabinet doors."
+  Episode  13/50: FAIL    (steps= 600, reward=0.0) layout=29, style=37, task="Open the cabinet doors."
+  Episode  14/50: FAIL    (steps= 600, reward=0.0) layout=28, style=32, task="Open the cabinet doors."
+  Episode  15/50: SUCCESS (steps=  89, reward=0.0) layout=56, style=17, task="Open the cabinet doors."
+  Episode  16/50: FAIL    (steps= 600, reward=0.0) layout=16, style=31, task="Open the cabinet doors."
+  Episode  17/50: FAIL    (steps= 600, reward=0.0) layout=48, style=20, task="Open the cabinet door."
+  Episode  18/50: FAIL    (steps= 600, reward=0.0) layout=30, style=20, task="Open the cabinet doors."
+  Episode  19/50: SUCCESS (steps=  89, reward=0.0) layout=36, style=56, task="Open the cabinet doors."
+  Episode  20/50: FAIL    (steps= 600, reward=0.0) layout=44, style=54, task="Open the cabinet door."
+  Episode  21/50: SUCCESS (steps=  77, reward=0.0) layout=58, style=24, task="Open the cabinet doors."
+  Episode  22/50: SUCCESS (steps= 142, reward=0.0) layout=35, style=59, task="Open the cabinet doors."
+  Episode  23/50: FAIL    (steps= 600, reward=0.0) layout=45, style=49, task="Open the cabinet doors."
+  Episode  24/50: SUCCESS (steps= 105, reward=0.0) layout=25, style=28, task="Open the cabinet doors."
+  Episode  25/50: SUCCESS (steps=  95, reward=0.0) layout=49, style=60, task="Open the cabinet doors."
+  Episode  26/50: SUCCESS (steps= 101, reward=0.0) layout=17, style=47, task="Open the cabinet door."
+  Episode  27/50: FAIL    (steps= 600, reward=0.0) layout=26, style=13, task="Open the cabinet doors."
+  Episode  28/50: FAIL    (steps= 600, reward=0.0) layout=17, style=55, task="Open the cabinet door."
+  Episode  29/50: SUCCESS (steps=  85, reward=0.0) layout=23, style=52, task="Open the cabinet doors."
+  Episode  30/50: SUCCESS (steps= 446, reward=0.0) layout=49, style=11, task="Open the cabinet doors."
+  Episode  31/50: FAIL    (steps= 600, reward=0.0) layout=24, style=11, task="Open the cabinet door."
+  Episode  32/50: SUCCESS (steps= 104, reward=0.0) layout=42, style=30, task="Open the cabinet doors."
+  Episode  33/50: FAIL    (steps= 600, reward=0.0) layout=46, style=21, task="Open the cabinet doors."
+  Episode  34/50: SUCCESS (steps= 176, reward=0.0) layout=37, style=44, task="Open the cabinet doors."
+  Episode  35/50: SUCCESS (steps=  87, reward=0.0) layout=28, style=57, task="Open the cabinet doors."
+  Episode  36/50: FAIL    (steps= 600, reward=0.0) layout=25, style=52, task="Open the cabinet door."
+  Episode  37/50: FAIL    (steps= 600, reward=0.0) layout=58, style=52, task="Open the cabinet doors."
+  Episode  38/50: SUCCESS (steps= 116, reward=0.0) layout=15, style=53, task="Open the cabinet doors."
+  Episode  39/50: FAIL    (steps= 600, reward=0.0) layout=32, style=39, task="Open the cabinet door."
+  Episode  40/50: SUCCESS (steps=  92, reward=0.0) layout=15, style=17, task="Open the cabinet doors."
+  Episode  41/50: FAIL    (steps= 600, reward=0.0) layout=15, style=56, task="Open the cabinet doors."
+  Episode  42/50: FAIL    (steps= 600, reward=0.0) layout=14, style=58, task="Open the cabinet doors."
+  Episode  43/50: SUCCESS (steps= 105, reward=0.0) layout=31, style=49, task="Open the cabinet doors."
+  Episode  44/50: FAIL    (steps= 600, reward=0.0) layout=12, style=53, task="Open the cabinet door."
+  Episode  45/50: SUCCESS (steps=  75, reward=0.0) layout=45, style=31, task="Open the cabinet doors."
+  Episode  46/50: SUCCESS (steps=  82, reward=0.0) layout=27, style=55, task="Open the cabinet doors."
+  Episode  47/50: FAIL    (steps= 600, reward=0.0) layout=58, style=36, task="Open the cabinet doors."
+  Episode  48/50: SUCCESS (steps=  93, reward=0.0) layout=51, style=47, task="Open the cabinet doors."
+  Episode  49/50: FAIL    (steps= 600, reward=0.0) layout=13, style=14, task="Open the cabinet doors."
+  Episode  50/50: FAIL    (steps= 600, reward=0.0) layout=19, style=45, task="Open the cabinet doors."
+
+============================================================
+  Evaluation Results
+============================================================
+  Split:          pretrain
+  Episodes:       50
+  Successes:      24/50
+  Success rate:   48.0%
+  Avg ep length:  368.7 steps
+  Avg reward:     0.000
+
+============================================================
+  Performance Context
+============================================================
+Expected success rates from the RoboCasa benchmark:
+
+  Method                 | Pretrain | Target
+  -----------------------|----------|-------
+  Random actions         |    ~0%   |   ~0%
+  Simple MLP (baseline)  |    ~0%   |   ~0%
+  Diffusion (low-dim)    |   ~5-15% |  ~3-10%
+  Diffusion Policy (vis) |  ~30-60% | ~20-50%
+  pi-0                   |  ~40-70% | ~30-60%
+
